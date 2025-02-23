@@ -1,0 +1,339 @@
+import tkinter as tk
+import urllib.request
+import json
+from openai import OpenAI
+
+root = tk.Tk()
+root.configure(bg = "green")
+root.title("Recipe Finder")
+filename = "recipes.txt"
+
+def plus():
+    text = name_field.get()
+    name_field.delete(0, len(text))
+    list_box.insert(list_size[0], text)
+    list_size[0] += 1
+    items.append(text.replace(" ", "%2C%20"))
+
+def clear():
+    items.clear()
+    list_box.delete(0, 'end')
+
+def delete():
+    selected_boxes = list_box.curselection()
+    for i in selected_boxes[::-1]:
+        items.pop(i)
+        list_box.delete(i)
+
+def find():
+    recipe_window = tk.Tk()
+    recipe_window.title("Recipes")
+    recipe_window.configure(bg = "#1cbd42")
+    r_listbox = tk.Listbox(recipe_window, width=70, height=10)
+    r_listbox.grid(row=0, column=0, columnspan=3, padx=10, pady=10)
+
+    recipes = get_recipes(items, clicked.get())
+    recipe_labels = []
+    recipe_data = []
+
+    for i in range(min(10, len(recipes["hits"]))):
+        recipe = recipes["hits"][i]["recipe"]
+        recipe_labels.append(recipe["label"])
+        r_listbox.insert(i, recipe_labels[i])
+
+        recipe_details = {
+            "Servings per batch": recipe["yield"],
+            "Calories per serving": recipe["calories"]/recipe["yield"],
+            "Fat": recipe["totalNutrients"].get("FAT", {})["quantity"],
+            "Sugar": recipe["totalNutrients"].get("SUGAR", {})["quantity"],
+            "Sodium": recipe["totalNutrients"].get("NA", {})["quantity"]
+        }
+        recipe_data.append(recipe_details)
+
+    def details():
+        s = r_listbox.curselection()
+        if not s or recipe_labels[s[0]] == "No recipes found": return
+        s = s[0]
+        response = prompt(recipe_labels[s]).content.replace("*", "")
+        chatwindow = tk.Tk()
+        chatwindow.title("Details")
+
+        r_label = tk.Label(chatwindow, text=recipe_labels[s])
+        r_label.pack()
+
+        for key, val in recipe_data[s].items():
+            if key == "Servings per batch":
+                val = f"{round(val,1)} serving(s)"
+            elif key == "Calories per serving":
+                val = f"{round(val)}"
+            elif key in ["Sugar", "Sodium", "Fat"]:
+                val = f"{round(val,2)} grams"
+            r_label = tk.Label(chatwindow, text=f"{key}: {val}")
+            r_label.pack()
+
+        for i in response.split('\n'):
+            r_label = tk.Label(chatwindow, text=i)
+            r_label.pack()
+
+        close_button = tk.Button(chatwindow, text="Close", command=chatwindow.destroy)
+        close_button.pack()
+
+    def save_f():
+        s = r_listbox.curselection()
+        if not s or recipe_labels[s[0]] == "No recipes found": return
+        s = s[0]
+
+        l = len(msg_box.get())
+        msg_box.delete(0,l)
+        if write_to_file(recipe_labels[s], recipe_data[s]):
+            msg_box.insert(0, f"Successfully saved {recipe_labels[s]}")
+        else:
+            msg_box.insert(0, f"{recipe_labels[s]} is already saved.")
+
+    if len(recipe_labels) >= 1:
+        save_button = tk.Button(recipe_window, text = "Save", command=save_f)
+        save_button.grid(row=1,column=0, pady=(0,10))
+
+        b = tk.Button(recipe_window, text="More Details", command=details)
+        b.grid(row=1, column=1, pady=(0,10))
+
+        msg_box = tk.Entry(recipe_window, width = 70)
+        msg_box.grid(row=2, column=0, columnspan=3, pady=(0,10))
+
+    close_button = tk.Button(recipe_window, text="Close", command=recipe_window.destroy)
+    close_button.grid(row=1, column=2, pady=(0,10))
+
+
+    #Safeguard in case items is gibberish
+    #------------------------------------------
+    if not recipe_labels:
+        r_listbox.insert(0, "No recipes found")
+        recipe_labels.append("No recipes found")
+    #------------------------------------------
+
+
+def my_recipes():
+    recipe_window = tk.Tk()
+    recipe_window.title("Saved Recipes")
+    recipe_window.configure(bg = "#1cbd42")
+    r_listbox = tk.Listbox(recipe_window, width=70, height=10)
+    r_listbox.grid(row=0, column=0, columnspan=4, padx=10, pady=10)
+    
+    recipe_labels, recipe_data = read()
+
+    for i,j in enumerate(recipe_labels):
+        r_listbox.insert(i,j)
+
+    def clear():
+        empty_file()
+        r_listbox.delete(0, 'end')
+
+    def delete():
+        s = r_listbox.curselection()
+        if not s or recipe_labels[s[0]] == "No recipes found": return
+        s = s[0]
+
+        recipe_labels.pop(s)
+        recipe_data.pop(s)
+        r_listbox.delete(s)
+
+        empty_file()
+        for i,j in zip(recipe_labels, recipe_data):
+            write_to_file(i,j)
+
+    def details():
+        s = r_listbox.curselection()
+        if not s or recipe_labels[s[0]] == "No recipes found": return
+        s = s[0]
+        response = prompt(recipe_labels[s]).content.replace("*", "")
+        chatwindow = tk.Tk()
+        chatwindow.title("Details")
+
+        r_label = tk.Label(chatwindow, text=recipe_labels[s])
+        r_label.pack()
+
+        for key, val in recipe_data[s].items():
+            val = f"{round(float(val),2)} grams" if key in ["Fat", "Sugar", "Sodium"] else val
+            r_label = tk.Label(chatwindow, text=f"{key}: {val}")
+            r_label.pack()
+
+        for i in response.split('\n'):
+            r_label = tk.Label(chatwindow, text=i)
+            r_label.pack()
+
+        close_button = tk.Button(chatwindow, text="Close", command=chatwindow.destroy)
+        close_button.pack()
+
+
+    if len(recipe_labels) >= 1:
+        clear_all_button = tk.Button(recipe_window, text="Clear all", command=clear)
+        clear_all_button.grid(row=1,column=0, pady=(0,10))
+
+        delete_button = tk.Button(recipe_window, text="Delete", command=delete)
+        delete_button.grid(row=1,column=1, pady=(0,10))
+
+        more_button = tk.Button(recipe_window, text="More details", command=details)
+        more_button.grid(row=1,column=2, pady=(0,10))
+
+    close_button = tk.Button(recipe_window, text="Close", command=recipe_window.destroy)
+    close_button.grid(row=1,column=3, pady=(0,10))
+
+    #Safeguard in case items is gibberish
+    #------------------------------------------
+    if not recipe_labels:
+        r_listbox.insert(0, "No recipes found")
+        recipe_labels.append("No recipes found")
+    #------------------------------------------
+
+
+#---------------------------------------
+
+def get_recipes(items, option):
+    s = '%2C%20and%2C%20'.join(items)
+    option = option.rstrip()
+    if (option == "Low fat"):
+        url = f"https://api.edamam.com/api/recipes/v2?type=public&q={s}&app_id=4582b076&app_key=52a57716218849333414fea4ac896e78&diet=low-fat"
+    elif (option == "Low carb"):
+        url = f"https://api.edamam.com/api/recipes/v2?type=public&q={s}&app_id=4582b076&app_key=52a57716218849333414fea4ac896e78&diet=low-carb"
+    elif (option == "High protein"):
+        url = f"https://api.edamam.com/api/recipes/v2?type=public&q={s}&app_id=4582b076&app_key=52a57716218849333414fea4ac896e78&diet=high-protein"
+    else:
+        url = f"https://api.edamam.com/api/recipes/v2?type=public&q={s}&app_id=4582b076&app_key=52a57716218849333414fea4ac896e78%09"
+
+    response = urllib.request.urlopen(url)
+    data = json.loads(response.read())
+    return data
+
+
+def prompt(recipe_name):
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        store=True,
+        messages=[
+            {"role": "system",
+             "content": "You are a gourmet chef that can make a recipe out of any combination of given ingredients."},
+            {"role": "user",
+             "content": "Please give me instructions for " + recipe_name + " in less than 200 words and give it a health score from 0 to 10 with 10 being the most healthy and 0 being the least healthy."}
+        ]
+    )
+    return completion.choices[0].message
+
+#---------------------------------------
+# FILE STUFF
+#---------------------------------------
+
+def write_to_file(recipe_name, recipe_data):
+    rnames, _ = read()
+    if recipe_name in rnames:
+        return False
+
+    with open(filename, "a") as f:
+        f.write(recipe_name)
+        f.write('|')
+        for i,(key,val) in enumerate(recipe_data.items()):
+            if i != 0: f.write(";")
+            f.write(f"{key}:{val}")
+        f.write('\n')
+    return True
+
+def read():
+    rnames = []
+    rdata = []
+    try:
+        with open(filename, "r") as f:
+            s = f.read()
+            lines = s.split('\n')
+            for line in lines:
+                if not line: continue
+                a,b = line.split("|")
+                rnames.append(a)
+                d = {}
+                for x in b.split(';'):
+                    k,v = x.split(':')
+                    d[k] = v
+                rdata.append(d)
+    except:
+        pass
+    return rnames, rdata
+
+def empty_file():
+    f = open(filename, "w")
+    f.close()
+
+
+#--------------------------------------
+
+def enter(event):
+    plus()
+root.bind('<Return>', enter)
+
+client = OpenAI(
+  api_key="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"
+)
+
+frame1 = tk.Frame(bg = "light green")
+
+name_field = tk.Entry(frame1, width=25)
+#name_field.grid(row=0,column=0, columnspan=2, pady=2, padx=(10,0))
+
+name_label = tk.Label(frame1, text="Item Name", anchor = 'w')
+#name_label.grid(row=1,column=0, columnspan=2, pady=2, padx=(10,0))
+
+plus_button = tk.Button(frame1, text="+", bg = "light blue", command=plus)
+#plus_button.grid(row=0,column=2, padx=10, pady=2)
+
+clicked = tk.StringVar()
+options = [
+    "None        ",
+    "Low carb    ",
+    "Low fat     ",
+    "High protein"
+]
+clicked.set(options[0])
+dropdown = tk.OptionMenu(frame1, clicked, *options)
+#dropdown.grid(row=0, column=3, pady=2, padx=10)
+
+frame1.pack(side = "top", fill = 'x', padx = 15, pady = 10)
+name_label.pack(side = "left")
+name_field.pack(side = "left", padx = 10)
+plus_button.pack(side = "left")
+dropdown.pack(side = "right")
+
+frame2 = tk.Frame()
+
+list_box = tk.Listbox(frame2, width=55, height=10)
+#list_box.grid(row=2, column=0, columnspan=4, pady=5, padx=10)
+list_size = [1]
+
+scrollbar = tk.Scrollbar(frame2, orient = tk.VERTICAL)
+frame2.pack(side = "top", fill = 'x', padx = 15, pady = 10)
+list_box.pack(side = "left", fill = 'x')
+scrollbar.pack(side = "right", fill = tk.Y)
+scrollbar.config(command=list_box.yview)
+list_box.config(yscrollcommand = scrollbar.set)
+
+frame3 = tk.Frame(bg = "green")
+
+clear_button = tk.Button(frame3, text="Clear all", command=clear)
+#clear_button.grid(row=3,column=0)
+
+delete_button = tk.Button(frame3, text="Delete", command=delete)
+#delete_button.grid(row=3,column=1)
+
+my_recipe_button = tk.Button(frame3, text="My Recipes", command=my_recipes)
+#my_recipe_button.grid(row=3,column=2)
+
+#color = "#FC0AFC"
+find_button = tk.Button(frame3, text="Find", bg = "gold", command=find)
+#find_button.grid(row=3,column=3)
+
+frame3.pack(side = "top", fill = 'x', padx = 15, pady = 10)
+clear_button.pack(side = "left")
+delete_button.pack(side = "left", padx = 40)
+my_recipe_button.pack(side = "left", padx = 15)
+find_button.pack(side = "right")
+
+items = []
+
+
+root.mainloop()

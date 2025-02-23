@@ -268,19 +268,14 @@ def enter(event):
 root.bind('<Return>', enter)
 
 client = OpenAI(
-  api_key="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"
+  api_key="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"
 )
 
 frame1 = tk.Frame(bg = "light green")
 
 name_field = tk.Entry(frame1, width=25)
-#name_field.grid(row=0,column=0, columnspan=2, pady=2, padx=(10,0))
-
 name_label = tk.Label(frame1, text="Item Name", anchor = 'w')
-#name_label.grid(row=1,column=0, columnspan=2, pady=2, padx=(10,0))
-
 plus_button = tk.Button(frame1, text="+", bg = "light blue", command=plus)
-#plus_button.grid(row=0,column=2, padx=10, pady=2)
 
 clicked = tk.StringVar()
 options = [
@@ -291,7 +286,6 @@ options = [
 ]
 clicked.set(options[0])
 dropdown = tk.OptionMenu(frame1, clicked, *options)
-#dropdown.grid(row=0, column=3, pady=2, padx=10)
 
 frame1.pack(side = "top", fill = 'x', padx = 15, pady = 10)
 name_label.pack(side = "left")
@@ -302,7 +296,6 @@ dropdown.pack(side = "right")
 frame2 = tk.Frame()
 
 list_box = tk.Listbox(frame2, width=55, height=10)
-#list_box.grid(row=2, column=0, columnspan=4, pady=5, padx=10)
 list_size = [1]
 
 scrollbar = tk.Scrollbar(frame2, orient = tk.VERTICAL)
@@ -315,17 +308,9 @@ list_box.config(yscrollcommand = scrollbar.set)
 frame3 = tk.Frame(bg = "green")
 
 clear_button = tk.Button(frame3, text="Clear all", command=clear)
-#clear_button.grid(row=3,column=0)
-
 delete_button = tk.Button(frame3, text="Delete", command=delete)
-#delete_button.grid(row=3,column=1)
-
 my_recipe_button = tk.Button(frame3, text="My Recipes", command=my_recipes)
-#my_recipe_button.grid(row=3,column=2)
-
-#color = "#FC0AFC"
 find_button = tk.Button(frame3, text="Find", bg = "gold", command=find)
-#find_button.grid(row=3,column=3)
 
 frame3.pack(side = "top", fill = 'x', padx = 15, pady = 10)
 clear_button.pack(side = "left")
